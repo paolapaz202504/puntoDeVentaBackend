@@ -1,0 +1,353 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Roles
+// -------------------------------------------------------------
+model Role {
+  id               String           @id @default(uuid()) @db.VarChar(36)
+  name             String           @unique @db.VarChar(50)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at       DateTime         @default(now()) @db.DateTime(3)
+  updated_at       DateTime         @updatedAt @db.DateTime(3)
+  created_by       String?          @db.VarChar(36)
+  updated_by       String?          @db.VarChar(36)
+
+  // Relaciones N:M
+  user_roles       UserRole[]
+  role_permissions RolePermission[]
+
+  @@map("roles")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Permisos
+// -------------------------------------------------------------
+model Permission {
+  id               String           @id @default(uuid()) @db.VarChar(36)
+  slug             String           @unique @db.VarChar(60)
+  name             String           @db.VarChar(75)
+  module           String           @db.VarChar(50)
+  description      String?          @db.VarChar(255)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at       DateTime         @default(now()) @db.DateTime(3)
+  updated_at       DateTime         @updatedAt @db.DateTime(3)
+  created_by       String?          @db.VarChar(36)
+  updated_by       String?          @db.VarChar(36)
+
+  // Relaciones N:M
+  role_permissions RolePermission[]
+
+  @@map("permissions")
+}
+
+// -------------------------------------------------------------
+// Tabla Puente: Roles ↔ Permisos (N:M)
+// -------------------------------------------------------------
+model RolePermission {
+  id            String     @id @default(uuid()) @db.VarChar(36)
+  role_id       String     @db.VarChar(36)
+  permission_id String     @db.VarChar(36)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at    DateTime   @default(now()) @db.DateTime(3)
+  updated_at    DateTime   @updatedAt @db.DateTime(3)
+  created_by    String?    @db.VarChar(36)
+  updated_by    String?    @db.VarChar(36)
+
+  // Relaciones
+  role          Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+
+  @@unique([role_id, permission_id], map: "role_permission_unique")
+  @@index([permission_id], map: "role_permissions_permission_id_fkey")
+  @@map("role_permissions")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Usuarios
+// -------------------------------------------------------------
+model User {
+  id            String       @id @default(uuid()) @db.VarChar(36)
+  name          String       @db.VarChar(75)
+  user          String       @unique @db.VarChar(50)
+  email         String?      @unique @db.VarChar(75)
+  password_hash String       @db.VarChar(255)
+  pin_code      String?      @db.Char(4)
+  is_active     Boolean      @default(true)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at    DateTime     @default(now()) @db.DateTime(3)
+  updated_at    DateTime     @updatedAt @db.DateTime(3)
+  created_by    String?      @db.VarChar(36)
+  updated_by    String?      @db.VarChar(36)
+
+  // Relaciones N:M (Un usuario tiene uno o más roles)
+  user_roles    UserRole[]
+
+  @@map("users")
+}
+
+// -------------------------------------------------------------
+// Tabla Puente: Usuarios ↔ Roles (N:M)
+// -------------------------------------------------------------
+model UserRole {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  user_id    String   @db.VarChar(36)
+  role_id    String   @db.VarChar(36)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at DateTime @default(now()) @db.DateTime(3)
+  updated_at DateTime @updatedAt @db.DateTime(3)
+  created_by String?  @db.VarChar(36)
+  updated_by String?  @db.VarChar(36)
+
+  // Relaciones
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [role_id], references: [id], onDelete: Restrict)
+
+  @@unique([user_id, role_id], map: "user_role_unique")
+  @@index([role_id], map: "user_roles_role_id_fkey")
+  @@map("user_roles")
+}
+
+// -------------------------------------------------------------
+// Configuración del Sistema e Información de la Empresa
+// -------------------------------------------------------------
+model SystemSetting {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  company_name    String   @default("Mi Restaurante") @db.VarChar(120)
+  tax_id          String?  @db.VarChar(50)
+  phone           String?  @db.VarChar(50)
+  email           String?  @db.VarChar(100)
+  address         String?  @db.VarChar(255)
+  currency_symbol String   @default("$") @db.VarChar(10)
+  logo_url        String?  @db.VarChar(255)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at      DateTime @default(now()) @db.DateTime(3)
+  updated_at      DateTime @updatedAt @db.DateTime(3)
+  created_by      String?  @db.VarChar(36)
+  updated_by      String?  @db.VarChar(36)
+
+  @@map("system_settings")
+}
+
+// -------------------------------------------------------------
+// Bitácora de Copias de Seguridad (Backups)
+// -------------------------------------------------------------
+model BackupLog {
+  id                     String   @id @default(uuid()) @db.VarChar(36)
+  filename               String   @db.VarChar(255)
+  file_path              String   @db.VarChar(500)
+  file_size_bytes        Int      @default(0)
+  file_size_formatted    String   @db.VarChar(50)
+  custom_destination     String?  @db.VarChar(500)
+  user_name              String   @db.VarChar(100)
+  user_login             String   @db.VarChar(50)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at             DateTime @default(now()) @db.DateTime(3)
+  updated_at             DateTime @updatedAt @db.DateTime(3)
+  created_by             String?  @db.VarChar(36)
+  updated_by             String?  @db.VarChar(36)
+
+  @@index([created_at], map: "backup_logs_created_at_idx")
+  @@index([created_by], map: "backup_logs_created_by_idx")
+  @@map("backup_logs")
+}
+
+// -------------------------------------------------------------
+// Bitácora de Restauración de Base de Datos
+// -------------------------------------------------------------
+model RestoreLog {
+  id                     String   @id @default(uuid()) @db.VarChar(36)
+  imported_filename      String   @db.VarChar(255)
+  file_size_bytes        Int      @default(0)
+  file_size_formatted    String   @db.VarChar(50)
+  auto_backup_filename   String   @db.VarChar(255)
+  status                 String   @default("SUCCESS") @db.VarChar(20)
+  error_message          String?  @db.Text
+  user_name              String   @db.VarChar(100)
+  user_login             String   @db.VarChar(50)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at             DateTime @default(now()) @db.DateTime(3)
+  updated_at             DateTime @updatedAt @db.DateTime(3)
+  created_by             String?  @db.VarChar(36)
+  updated_by             String?  @db.VarChar(36)
+
+  @@index([created_at], map: "restore_logs_created_at_idx")
+  @@index([created_by], map: "restore_logs_created_by_idx")
+  @@map("restore_logs")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Áreas del Restaurante
+// -------------------------------------------------------------
+model Area {
+  id         String            @id @default(uuid()) @db.VarChar(36)
+  name       String            @unique @db.VarChar(50)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at DateTime          @default(now()) @db.DateTime(3)
+  updated_at DateTime          @updatedAt @db.DateTime(3)
+  created_by String?           @db.VarChar(36)
+  updated_by String?           @db.VarChar(36)
+
+  // Relación 1:N con Mesas
+  tables     RestaurantTable[]
+
+  @@map("areas")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Mesas / Espacios del Restaurante
+// -------------------------------------------------------------
+model RestaurantTable {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  name       String   @db.VarChar(50)
+  area_id    String   @db.VarChar(36)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at DateTime @default(now()) @db.DateTime(3)
+  updated_at DateTime @updatedAt @db.DateTime(3)
+  created_by String?  @db.VarChar(36)
+  updated_by String?  @db.VarChar(36)
+
+  // Relaciones
+  area       Area     @relation(fields: [area_id], references: [id], onDelete: Restrict)
+
+  @@unique([area_id, name], map: "area_table_name_unique")
+  @@index([area_id], map: "restaurant_tables_area_id_fkey")
+  @@map("restaurant_tables")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Unidades de Medida
+// -------------------------------------------------------------
+model MeasurementUnit {
+  id         String    @id @default(uuid()) @db.VarChar(36)
+  name       String    @db.VarChar(50)
+  symbol     String    @unique @db.VarChar(10)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at DateTime  @default(now()) @db.DateTime(3)
+  updated_at DateTime  @updatedAt @db.DateTime(3)
+  created_by String?   @db.VarChar(36)
+  updated_by String?   @db.VarChar(36)
+
+  // Relaciones
+  products   Product[]
+
+  @@map("measurement_units")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Categorías de Productos
+// -------------------------------------------------------------
+model Category {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  name        String    @unique @db.VarChar(60)
+  description String?   @db.VarChar(255)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at  DateTime  @default(now()) @db.DateTime(3)
+  updated_at  DateTime  @updatedAt @db.DateTime(3)
+  created_by  String?   @db.VarChar(36)
+  updated_by  String?   @db.VarChar(36)
+
+  // Relaciones
+  products    Product[]
+
+  @@map("categories")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Marcas / Fabricantes
+// -------------------------------------------------------------
+model Brand {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  name        String    @unique @db.VarChar(80)
+  description String?   @db.VarChar(255)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at  DateTime  @default(now()) @db.DateTime(3)
+  updated_at  DateTime  @updatedAt @db.DateTime(3)
+  created_by  String?   @db.VarChar(36)
+  updated_by  String?   @db.VarChar(36)
+
+  // Relaciones
+  products    Product[]
+
+  @@map("brands")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Productos
+// -------------------------------------------------------------
+model Product {
+  id              String                        @id @default(uuid()) @db.VarChar(36)
+  code            String                        @unique @db.VarChar(30)
+  name            String                        @db.VarChar(100)
+  brand_id        String?                       @db.VarChar(36)
+  category_id     String                        @db.VarChar(36)
+  base_unit_id    String                        @db.VarChar(36)
+  product_type    String                        @default("DIRECT_SALE") @db.VarChar(25) // DIRECT_SALE, MANUFACTURED, RAW_MATERIAL
+  sale_price      Decimal                       @default(0.00) @db.Decimal(10, 2)
+  current_cost    Decimal                       @default(0.00) @db.Decimal(10, 2)
+  current_stock   Decimal                       @default(0.00) @db.Decimal(10, 2)
+  min_stock_alert Decimal                       @default(5.00) @db.Decimal(10, 2)
+  image_url       String?                       @db.VarChar(255)
+  is_active       Boolean                       @default(true)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at      DateTime                      @default(now()) @db.DateTime(3)
+  updated_at      DateTime                      @updatedAt @db.DateTime(3)
+  created_by      String?                       @db.VarChar(36)
+  updated_by      String?                       @db.VarChar(36)
+
+  // Relaciones
+  brand           Brand?                        @relation(fields: [brand_id], references: [id], onDelete: Restrict)
+  category        Category                      @relation(fields: [category_id], references: [id], onDelete: Restrict)
+  base_unit       MeasurementUnit               @relation(fields: [base_unit_id], references: [id], onDelete: Restrict)
+  presentations   ProductPurchasePresentation[]
+
+  @@index([brand_id], map: "products_brand_id_fkey")
+  @@index([category_id], map: "products_category_id_fkey")
+  @@index([base_unit_id], map: "products_base_unit_id_fkey")
+  @@map("products")
+}
+
+// -------------------------------------------------------------
+// Presentaciones de Compra y Factores de Conversión
+// -------------------------------------------------------------
+model ProductPurchasePresentation {
+  id                String   @id @default(uuid()) @db.VarChar(36)
+  product_id        String   @db.VarChar(36)
+  name              String   @db.VarChar(60) // "Caja de 24", "Paquete de 6", "Charola de 20"
+  conversion_factor Int      // 24, 12, 6, 20, etc.
+  barcode           String?  @db.VarChar(50)
+  default_cost      Decimal? @db.Decimal(10, 2) // Precio de compra de esta presentación
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at        DateTime @default(now()) @db.DateTime(3)
+  updated_at        DateTime @updatedAt @db.DateTime(3)
+  created_by        String?  @db.VarChar(36)
+  updated_by        String?  @db.VarChar(36)
+
+  // Relaciones
+  product           Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@unique([product_id, name], map: "product_presentation_unique")
+  @@index([product_id], map: "product_purchase_presentations_product_id_fkey")
+  @@map("product_purchase_presentations")
+}

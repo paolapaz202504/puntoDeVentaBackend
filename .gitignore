@@ -1,0 +1,83 @@
+# ==========================================
+# puntoV - Backend (.gitignore)
+# Node.js / Express / TypeScript / Prisma
+# ==========================================
+
+# Dependencias
+node_modules/
+.pnp
+.pnp.js
+
+# Compilación y artefactos TypeScript
+dist/
+build/
+*.tsbuildinfo
+
+# Variables de entorno y secretos sensibles
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+!*.env.example
+
+# Credenciales y llaves de Cloud (Google Cloud / GCP)
+*gcp*.json
+*service-account*.json
+*credentials*.json
+gcp-key.json
+
+# Logs y depuración
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Copias de seguridad y respaldos SQL locales (datos sensibles)
+copia_de_seguridad/*.sql
+importar_base_de_datos/*.sql
+backups/*.sql
+*.sql.gz
+*.sql.tar.gz
+!copia_de_seguridad/.gitkeep
+!importar_base_de_datos/.gitkeep
+
+# Archivos multimedia subidos en ejecución (preservando estructura)
+files/config/*
+!files/config/.gitkeep
+
+# Archivos de cobertura de pruebas
+coverage/
+.nyc_output/
+
+# Archivos de configuración del editor y SO
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# IDEs y editores
+.idea/
+*.sublime-project
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Temporales del sistema
+*.tmp
+*.temp
+.cache/
+
+# Archivos en CGC
+.gcp-key.json
