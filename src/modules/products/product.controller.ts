@@ -81,23 +81,30 @@ export class ProductController {
           message: "No se proporcionó ningún archivo de imagen",
         });
       }
-      const imageUrl = `/files/products/${req.file.filename}`;
+      const filename = req.file.filename;
+      const bucketName = process.env.GCP_STORAGE_BUCKET || "punto_de_venta";
+      const envPrefix = process.env.NODE_ENV === "production" ? "prod" : "dev";
+      const publicGcsUrl = `https://storage.googleapis.com/${bucketName}/${envPrefix}/files/products/${filename}`;
+      const relativeUrl = `/files/products/${filename}`;
 
-      // Sincronizar imagen con Google Cloud Storage en segundo plano
+      // Sincronizar imagen con Google Cloud Storage
       if (cloudStorage.isAvailable()) {
-        cloudStorage.uploadLocalFile(
-          req.file.path,
-          `files/products/${req.file.filename}`,
-          req.file.mimetype
-        ).catch((err) => {
+        try {
+          await cloudStorage.uploadLocalFile(
+            req.file.path,
+            `files/products/${filename}`,
+            req.file.mimetype
+          );
+        } catch (err) {
           console.error("Error al sincronizar imagen con GCS:", err);
-        });
+        }
       }
 
       return res.json({
         success: true,
         message: "Imagen de producto subida exitosamente",
-        imageUrl,
+        imageUrl: publicGcsUrl,
+        relativePath: relativeUrl,
       });
     } catch (error) {
       next(error);

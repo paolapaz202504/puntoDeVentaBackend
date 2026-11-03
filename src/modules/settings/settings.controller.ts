@@ -37,21 +37,25 @@ export class SettingsController {
         });
       }
 
-      // La imagen se guardó en files/config/<filename>
-      const logoUrl = `/files/config/${req.file.filename}`;
+      const filename = req.file.filename;
+      const bucketName = process.env.GCP_STORAGE_BUCKET || "punto_de_venta";
+      const envPrefix = process.env.NODE_ENV === "production" ? "prod" : "dev";
+      const publicLogoUrl = `https://storage.googleapis.com/${bucketName}/${envPrefix}/files/config/${filename}`;
 
-      // Sincronizar logotipo con Google Cloud Storage en segundo plano
+      // Sincronizar logotipo con Google Cloud Storage
       if (cloudStorage.isAvailable()) {
-        cloudStorage.uploadLocalFile(
-          req.file.path,
-          `files/config/${req.file.filename}`,
-          req.file.mimetype
-        ).catch((err) => {
+        try {
+          await cloudStorage.uploadLocalFile(
+            req.file.path,
+            `files/config/${filename}`,
+            req.file.mimetype
+          );
+        } catch (err) {
           console.error("Error al sincronizar logotipo con GCS:", err);
-        });
+        }
       }
 
-      const updated = await SettingsService.updateLogo(logoUrl, req.user?.id);
+      const updated = await SettingsService.updateLogo(publicLogoUrl, req.user?.id);
 
       return res.json({
         success: true,
