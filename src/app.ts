@@ -36,6 +36,8 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     service: "puntoV-backend",
+    version: "1.0.1",
+    environment: process.env.NODE_ENV || "development",
     timestamp: new Date().toISOString(),
   });
 });

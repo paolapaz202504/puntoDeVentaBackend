@@ -1,6 +1,6 @@
 {
   "name": "puntov-backend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "API RESTful para Sistema de Punto de Venta de Restaurante - DevTeam",
   "main": "dist/server.js",
   "scripts": {
