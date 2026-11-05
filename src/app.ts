@@ -16,6 +16,7 @@ import productRoutes from "./modules/products/product.routes.js";
 import supplierRoutes from "./modules/suppliers/supplier.routes.js";
 import recipeRoutes from "./modules/recipes/recipe.routes.js";
 import productionRoutes from "./modules/production/production.routes.js";
+import stockEntryRoutes from "./modules/stockEntries/stockEntry.routes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
 export const app = express();
@@ -61,6 +62,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/suppliers", supplierRoutes);
 app.use("/api/recipes", recipeRoutes);
 app.use("/api/production", productionRoutes);
+app.use("/api/stock-entries", stockEntryRoutes);
 
 // Middleware de manejo centralizado de errores
 app.use(errorHandler);

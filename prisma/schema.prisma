@@ -328,6 +328,7 @@ model Product {
   as_ingredient        RecipeItem[]           @relation("IngredientProduct")
   production_batches   ProductionBatch[]      @relation("BatchProduct")
   consumed_batch_items ProductionBatchItem[]  @relation("BatchItemIngredient")
+  stock_entry_items    StockEntryItem[]
 
   @@index([brand_id], map: "products_brand_id_fkey")
   @@index([category_id], map: "products_category_id_fkey")
@@ -356,7 +357,8 @@ model Supplier {
   updated_by   String?   @db.VarChar(36)
 
   // Relaciones
-  products     Product[]
+  products      Product[]
+  stock_entries StockEntry[]
 
   @@map("suppliers")
 }
@@ -491,4 +493,97 @@ model ProductPurchasePresentation {
   @@unique([product_id, name], map: "product_presentation_unique")
   @@index([product_id], map: "product_purchase_presentations_product_id_fkey")
   @@map("product_purchase_presentations")
+}
+
+// -------------------------------------------------------------
+// Registro de Entradas de Almacén y Compras
+// -------------------------------------------------------------
+model StockEntry {
+  id              String             @id @default(uuid()) @db.VarChar(36)
+  entry_number    String             @unique @db.VarChar(30) // Ej: "CMP-2026-0001", "ENT-2026-0001"
+  supplier_id     String?            @db.VarChar(36)
+  entry_type      String             @default("COMPRA") @db.VarChar(20) // "COMPRA", "DONACION", "AJUSTE"
+  entry_date      DateTime           @default(now()) @db.DateTime(3) // Fecha de compra/recepción
+  invoice_number  String?            @db.VarChar(50) // No. de Factura física o serie del proveedor
+  
+  // Aspectos Financieros
+  payment_type    String             @default("CONTADO") @db.VarChar(20) // "CONTADO", "CREDITO", "NO_APLICA"
+  payment_status  String             @default("PAGADA") @db.VarChar(20) // "PAGADA", "PENDIENTE", "PARCIAL", "NO_APLICA"
+  total_cost      Decimal            @default(0.00) @db.Decimal(10, 2)
+  paid_amount     Decimal            @default(0.00) @db.Decimal(10, 2)
+  balance_amount  Decimal            @default(0.00) @db.Decimal(10, 2) // Saldo pendiente
+  due_date        DateTime?          @db.Date // Fecha de vencimiento si es a crédito
+  notes           String?            @db.Text
+  
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at      DateTime           @default(now()) @db.DateTime(3)
+  updated_at      DateTime           @updatedAt @db.DateTime(3)
+  created_by      String?            @db.VarChar(36)
+  updated_by      String?            @db.VarChar(36)
+
+  // Relaciones
+  supplier        Supplier?          @relation(fields: [supplier_id], references: [id], onDelete: Restrict)
+  items           StockEntryItem[]
+  payments        PurchasePayment[]
+
+  @@index([supplier_id], map: "stock_entries_supplier_id_fkey")
+  @@map("stock_entries")
+}
+
+// -------------------------------------------------------------
+// Detalle de Ítems / Productos en la Entrada
+// -------------------------------------------------------------
+model StockEntryItem {
+  id                 String             @id @default(uuid()) @db.VarChar(36)
+  entry_id           String             @db.VarChar(36)
+  product_id         String             @db.VarChar(36)
+  presentation_name  String?            @db.VarChar(60) // Ej. "Caja de 24", "Saco 50 lb" o null si unidad base
+  quantity           Decimal            @db.Decimal(10, 2) // Cantidad en la presentación comprada
+  conversion_factor  Int                @default(1) // Factor a unidad base
+  base_quantity      Decimal            @db.Decimal(10, 2) // Cantidad total en unidad base (quantity * conversion_factor)
+  unit_cost          Decimal            @db.Decimal(10, 2) // Costo unitario base
+  total_cost         Decimal            @db.Decimal(10, 2)
+  
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at         DateTime           @default(now()) @db.DateTime(3)
+  updated_at         DateTime           @updatedAt @db.DateTime(3)
+  created_by         String?            @db.VarChar(36)
+  updated_by         String?            @db.VarChar(36)
+
+  // Relaciones
+  entry              StockEntry         @relation(fields: [entry_id], references: [id], onDelete: Cascade)
+  product            Product            @relation(fields: [product_id], references: [id], onDelete: Restrict)
+
+  @@index([entry_id], map: "stock_entry_items_entry_id_fkey")
+  @@index([product_id], map: "stock_entry_items_product_id_fkey")
+  @@map("stock_entry_items")
+}
+
+// -------------------------------------------------------------
+// Registro de Pagos y Abonos a Compras
+// -------------------------------------------------------------
+model PurchasePayment {
+  id                 String             @id @default(uuid()) @db.VarChar(36)
+  entry_id           String             @db.VarChar(36)
+  payment_date       DateTime           @default(now()) @db.DateTime(3)
+  amount             Decimal            @db.Decimal(10, 2)
+  payment_method     String             @default("EFECTIVO") @db.VarChar(20) // "EFECTIVO", "CHEQUE", "DEPOSITO", "TRANSFERENCIA"
+  
+  // Datos bancarios (obligatorios si no es EFECTIVO)
+  bank_name          String?            @db.VarChar(80) // Nombre del Banco emisor/receptor
+  document_number    String?            @db.VarChar(50) // No. de cheque, transferencia o boleta
+  document_date      DateTime?          @db.Date // Fecha consignada en el documento bancario
+  notes              String?            @db.VarChar(255)
+  
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at         DateTime           @default(now()) @db.DateTime(3)
+  updated_at         DateTime           @updatedAt @db.DateTime(3)
+  created_by         String?            @db.VarChar(36)
+  updated_by         String?            @db.VarChar(36)
+
+  // Relaciones
+  entry              StockEntry         @relation(fields: [entry_id], references: [id], onDelete: Cascade)
+
+  @@index([entry_id], map: "purchase_payments_entry_id_fkey")
+  @@map("purchase_payments")
 }
