@@ -301,7 +301,8 @@ model Product {
   brand_id        String?                       @db.VarChar(36)
   category_id     String                        @db.VarChar(36)
   base_unit_id    String                        @db.VarChar(36)
-  product_type    String                        @default("DIRECT_SALE") @db.VarChar(25) // DIRECT_SALE, MANUFACTURED, RAW_MATERIAL
+  supplier_id     String?                       @db.VarChar(36)
+  product_type    String                        @default("DIRECT_SALE") @db.VarChar(25) // DIRECT_SALE, MANUFACTURED, RAW_MATERIAL, SUB_RECIPE, ON_DEMAND
   sale_price      Decimal                       @default(0.00) @db.Decimal(10, 2)
   current_cost    Decimal                       @default(0.00) @db.Decimal(10, 2)
   current_stock   Decimal                       @default(0.00) @db.Decimal(10, 2)
@@ -319,12 +320,152 @@ model Product {
   brand           Brand?                        @relation(fields: [brand_id], references: [id], onDelete: Restrict)
   category        Category                      @relation(fields: [category_id], references: [id], onDelete: Restrict)
   base_unit       MeasurementUnit               @relation(fields: [base_unit_id], references: [id], onDelete: Restrict)
+  supplier        Supplier?                     @relation(fields: [supplier_id], references: [id], onDelete: SetNull)
   presentations   ProductPurchasePresentation[]
+
+  // Relaciones de Recetas y Producción
+  recipes_as_final     Recipe[]               @relation("ProductRecipe")
+  as_ingredient        RecipeItem[]           @relation("IngredientProduct")
+  production_batches   ProductionBatch[]      @relation("BatchProduct")
+  consumed_batch_items ProductionBatchItem[]  @relation("BatchItemIngredient")
 
   @@index([brand_id], map: "products_brand_id_fkey")
   @@index([category_id], map: "products_category_id_fkey")
   @@index([base_unit_id], map: "products_base_unit_id_fkey")
+  @@index([supplier_id], map: "products_supplier_id_fkey")
   @@map("products")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Proveedores
+// -------------------------------------------------------------
+model Supplier {
+  id           String    @id @default(uuid()) @db.VarChar(36)
+  name         String    @unique @db.VarChar(100)
+  contact_name String?   @db.VarChar(100)
+  phone        String?   @db.VarChar(50)
+  email        String?   @db.VarChar(100)
+  address      String?   @db.VarChar(255)
+  category     String    @default("GENERAL") @db.VarChar(50) // FRUTAS, PANADERIA, CARNICERIA, ABARROTES, GENERAL
+  is_active    Boolean   @default(true)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at   DateTime  @default(now()) @db.DateTime(3)
+  updated_at   DateTime  @updatedAt @db.DateTime(3)
+  created_by   String?   @db.VarChar(36)
+  updated_by   String?   @db.VarChar(36)
+
+  // Relaciones
+  products     Product[]
+
+  @@map("suppliers")
+}
+
+// -------------------------------------------------------------
+// Catálogo de Recetas y Fórmulas de Producción
+// -------------------------------------------------------------
+model Recipe {
+  id                 String            @id @default(uuid()) @db.VarChar(36)
+  product_id         String            @db.VarChar(36)
+  name               String            @db.VarChar(100)
+  recipe_type        String            @default("BATCH_SCALABLE") @db.VarChar(30) // BATCH_SCALABLE, SUB_RECIPE_BATCH, ON_DEMAND_UNIT
+  base_yield         Decimal           @default(1.00) @db.Decimal(10, 2)
+  yield_unit         String            @default("UND") @db.VarChar(20) // ML, LB, UND, VASO
+  instructions       String?           @db.Text
+  is_active          Boolean           @default(true)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at         DateTime          @default(now()) @db.DateTime(3)
+  updated_at         DateTime          @updatedAt @db.DateTime(3)
+  created_by         String?           @db.VarChar(36)
+  updated_by         String?           @db.VarChar(36)
+
+  // Relaciones
+  product            Product           @relation("ProductRecipe", fields: [product_id], references: [id], onDelete: Cascade)
+  items              RecipeItem[]
+  production_batches ProductionBatch[]
+
+  @@index([product_id], map: "recipes_product_id_fkey")
+  @@map("recipes")
+}
+
+// -------------------------------------------------------------
+// Ingredientes de la Receta
+// -------------------------------------------------------------
+model RecipeItem {
+  id            String   @id @default(uuid()) @db.VarChar(36)
+  recipe_id     String   @db.VarChar(36)
+  ingredient_id String   @db.VarChar(36)
+  quantity      Decimal  @db.Decimal(10, 4)
+  unit          String   @db.VarChar(20)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at    DateTime @default(now()) @db.DateTime(3)
+  updated_at    DateTime @updatedAt @db.DateTime(3)
+  created_by    String?  @db.VarChar(36)
+  updated_by    String?  @db.VarChar(36)
+
+  // Relaciones
+  recipe        Recipe   @relation(fields: [recipe_id], references: [id], onDelete: Cascade)
+  ingredient    Product  @relation("IngredientProduct", fields: [ingredient_id], references: [id], onDelete: Restrict)
+
+  @@index([recipe_id], map: "recipe_items_recipe_id_fkey")
+  @@index([ingredient_id], map: "recipe_items_ingredient_id_fkey")
+  @@map("recipe_items")
+}
+
+// -------------------------------------------------------------
+// Registro de Tandas y Lotes de Producción (Cocina / Barra)
+// -------------------------------------------------------------
+model ProductionBatch {
+  id                        String                @id @default(uuid()) @db.VarChar(36)
+  recipe_id                 String                @db.VarChar(36)
+  product_id                String                @db.VarChar(36)
+  container_capacity_liters Decimal?              @db.Decimal(10, 2) // Capacidad de cubeta (1 a 10L) si aplica
+  produced_quantity         Decimal               @db.Decimal(10, 2) // Cantidad obtenida (ML o LB)
+  total_cost                Decimal               @default(0.00) @db.Decimal(10, 2)
+  notes                     String?               @db.VarChar(255)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at                DateTime              @default(now()) @db.DateTime(3)
+  updated_at                DateTime              @updatedAt @db.DateTime(3)
+  created_by                String?               @db.VarChar(36)
+  updated_by                String?               @db.VarChar(36)
+
+  // Relaciones
+  recipe                    Recipe                @relation(fields: [recipe_id], references: [id], onDelete: Restrict)
+  product                   Product               @relation("BatchProduct", fields: [product_id], references: [id], onDelete: Restrict)
+  consumed_items            ProductionBatchItem[]
+
+  @@index([recipe_id], map: "production_batches_recipe_id_fkey")
+  @@index([product_id], map: "production_batches_product_id_fkey")
+  @@map("production_batches")
+}
+
+// -------------------------------------------------------------
+// Detalle de Insumos Consumidos en la Tanda de Producción
+// -------------------------------------------------------------
+model ProductionBatchItem {
+  id                String          @id @default(uuid()) @db.VarChar(36)
+  batch_id          String          @db.VarChar(36)
+  ingredient_id     String          @db.VarChar(36)
+  quantity_consumed Decimal         @db.Decimal(10, 4)
+  unit_cost_applied Decimal         @default(0.00) @db.Decimal(10, 2)
+  total_cost        Decimal         @default(0.00) @db.Decimal(10, 2)
+
+  // Auditoría obligatoria (Regla de Oro bdAgent)
+  created_at        DateTime        @default(now()) @db.DateTime(3)
+  updated_at        DateTime        @updatedAt @db.DateTime(3)
+  created_by        String?         @db.VarChar(36)
+  updated_by        String?         @db.VarChar(36)
+
+  // Relaciones
+  batch             ProductionBatch @relation(fields: [batch_id], references: [id], onDelete: Cascade)
+  ingredient        Product         @relation("BatchItemIngredient", fields: [ingredient_id], references: [id], onDelete: Restrict)
+
+  @@index([batch_id], map: "production_batch_items_batch_id_fkey")
+  @@index([ingredient_id], map: "production_batch_items_ingredient_id_fkey")
+  @@map("production_batch_items")
 }
 
 // -------------------------------------------------------------

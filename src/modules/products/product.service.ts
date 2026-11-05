@@ -7,11 +7,13 @@ export class ProductService {
     search: string;
     category_id?: string;
     brand_id?: string;
+    supplier_id?: string;
+    product_type?: string;
     presentation?: string;
     sortBy: "name" | "code" | "sale_price" | "current_stock" | "created_at" | "category" | "brand";
     order: "asc" | "desc";
   }) {
-    const { page, limit, search, category_id, brand_id, presentation, sortBy, order } = params;
+    const { page, limit, search, category_id, brand_id, supplier_id, product_type, presentation, sortBy, order } = params;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -30,6 +32,14 @@ export class ProductService {
 
     if (brand_id && brand_id.trim() !== "") {
       where.brand_id = brand_id;
+    }
+
+    if (supplier_id && supplier_id.trim() !== "") {
+      where.supplier_id = supplier_id;
+    }
+
+    if (product_type && product_type.trim() !== "") {
+      where.product_type = product_type;
     }
 
     if (presentation && presentation.trim() !== "") {
@@ -72,6 +82,20 @@ export class ProductService {
           base_unit: {
             select: { id: true, name: true, symbol: true },
           },
+          supplier: {
+            select: { id: true, name: true, category: true },
+          },
+          recipes_as_final: {
+            include: {
+              items: {
+                include: {
+                  ingredient: {
+                    select: { id: true, name: true, code: true, current_stock: true, base_unit: true },
+                  },
+                },
+              },
+            },
+          },
           presentations: {
             orderBy: { conversion_factor: "desc" },
           },
@@ -94,6 +118,9 @@ export class ProductService {
         category: p.category,
         base_unit_id: p.base_unit_id,
         base_unit: p.base_unit,
+        supplier_id: p.supplier_id,
+        supplier: p.supplier,
+        recipes_as_final: p.recipes_as_final,
         product_type: p.product_type,
         sale_price: Number(p.sale_price),
         current_cost: Number(p.current_cost),
@@ -123,6 +150,16 @@ export class ProductService {
         category: true,
         brand: true,
         base_unit: true,
+        supplier: true,
+        recipes_as_final: {
+          include: {
+            items: {
+              include: {
+                ingredient: true,
+              },
+            },
+          },
+        },
         presentations: {
           orderBy: { conversion_factor: "desc" },
         },
@@ -194,6 +231,7 @@ export class ProductService {
           brand_id: data.brand_id || null,
           category_id: data.category_id,
           base_unit_id: data.base_unit_id,
+          supplier_id: data.supplier_id || null,
           product_type: data.product_type || "DIRECT_SALE",
           sale_price: data.sale_price,
           current_cost: data.current_cost || 0,
@@ -228,6 +266,7 @@ export class ProductService {
           category: true,
           brand: true,
           base_unit: true,
+          supplier: true,
           presentations: true,
         },
       });
@@ -270,6 +309,7 @@ export class ProductService {
           brand_id: data.brand_id !== undefined ? (data.brand_id || null) : undefined,
           category_id: data.category_id,
           base_unit_id: data.base_unit_id,
+          supplier_id: data.supplier_id !== undefined ? (data.supplier_id || null) : undefined,
           product_type: data.product_type,
           sale_price: data.sale_price,
           current_cost: data.current_cost,

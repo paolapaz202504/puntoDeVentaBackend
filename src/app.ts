@@ -13,6 +13,9 @@ import unitRoutes from "./modules/units/unit.routes.js";
 import categoryRoutes from "./modules/categories/category.routes.js";
 import brandRoutes from "./modules/brands/brand.routes.js";
 import productRoutes from "./modules/products/product.routes.js";
+import supplierRoutes from "./modules/suppliers/supplier.routes.js";
+import recipeRoutes from "./modules/recipes/recipe.routes.js";
+import productionRoutes from "./modules/production/production.routes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
 export const app = express();
@@ -55,6 +58,9 @@ app.use("/api/units", unitRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/brands", brandRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/suppliers", supplierRoutes);
+app.use("/api/recipes", recipeRoutes);
+app.use("/api/production", productionRoutes);
 
 // Middleware de manejo centralizado de errores
 app.use(errorHandler);
