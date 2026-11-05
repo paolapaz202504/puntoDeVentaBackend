@@ -9,11 +9,11 @@ async function main() {
 
   // 1. Roles del sistema
   const defaultRoles = [
-    { name: "Administrador" },
-    { name: "Gerente / Supervisor" },
-    { name: "Cajero" },
-    { name: "Mesero" },
-    { name: "Cocina / Barra" },
+    { name: "Administrador", default_path: "/" },
+    { name: "Gerente / Supervisor", default_path: "/" },
+    { name: "Cajero", default_path: "/pos" },
+    { name: "Mesero", default_path: "/pos" },
+    { name: "Cocina / Barra", default_path: "/preparaciones" },
   ];
 
   const roleMap = new Map<string, string>();
@@ -27,13 +27,18 @@ async function main() {
       const created = await prisma.role.create({
         data: {
           name: roleData.name,
+          default_path: roleData.default_path,
           created_by: "SYSTEM_SEED",
         },
       });
-      console.log(`✅ Rol creado: ${created.name} (${created.id})`);
+      console.log(`✅ Rol creado: ${created.name} (${created.id}) -> ${created.default_path}`);
       roleMap.set(created.name, created.id);
     } else {
-      console.log(`ℹ️ Rol existente: ${existing.name} (${existing.id})`);
+      await prisma.role.update({
+        where: { id: existing.id },
+        data: { default_path: roleData.default_path },
+      });
+      console.log(`ℹ️ Rol actualizado con ruta: ${existing.name} (${existing.id}) -> ${roleData.default_path}`);
       roleMap.set(existing.name, existing.id);
     }
   }

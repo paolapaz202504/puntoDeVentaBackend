@@ -13,6 +13,7 @@ export const createRoleSchema = z.object({
       roleNameRegex,
       "El nombre solo acepta caracteres alfanuméricos, acentos y espacios, sin símbolos especiales"
     ),
+  default_path: z.string().trim().max(100).optional().default("/"),
 });
 
 export const updateRoleSchema = createRoleSchema.partial();

@@ -85,7 +85,7 @@ export class RoleService {
     };
   }
 
-  static async create(data: { name: string }, createdBy?: string) {
+  static async create(data: { name: string; default_path?: string }, createdBy?: string) {
     const existing = await prisma.role.findFirst({
       where: { name: data.name },
     });
@@ -99,13 +99,14 @@ export class RoleService {
     return prisma.role.create({
       data: {
         name: data.name,
+        default_path: data.default_path || "/",
         created_by: createdBy || null,
         updated_by: createdBy || null,
       },
     });
   }
 
-  static async update(id: string, data: { name?: string }, updatedBy?: string) {
+  static async update(id: string, data: { name?: string; default_path?: string }, updatedBy?: string) {
     await this.getById(id);
 
     if (data.name) {

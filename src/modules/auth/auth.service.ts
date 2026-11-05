@@ -54,6 +54,7 @@ export class AuthService {
       return {
         id: ur.role.id,
         name: ur.role.name,
+        default_path: ur.role.default_path || "/",
       };
     });
 
@@ -115,6 +116,7 @@ export class AuthService {
       return {
         id: ur.role.id,
         name: ur.role.name,
+        default_path: ur.role.default_path || "/",
       };
     });
 
@@ -270,6 +272,7 @@ export class AuthService {
       return {
         id: ur.role.id,
         name: ur.role.name,
+        default_path: ur.role.default_path || "/",
       };
     });
 
