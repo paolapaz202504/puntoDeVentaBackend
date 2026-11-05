@@ -32,10 +32,31 @@ if (fs.existsSync(envPath)) {
   dotenv.config();
 }
 
+// Sanitización y enrutamiento estricto de base de datos
+let rawDatabaseUrl = process.env.DATABASE_URL || "";
+if (nodeEnv === "production") {
+  // En producción debe apuntar obligatoriamente a refresqueriadbprod
+  if (rawDatabaseUrl.includes("/test")) {
+    rawDatabaseUrl = rawDatabaseUrl.replace(/\/test(\?|$)/, "/refresqueriadbprod$1");
+  } else if (!rawDatabaseUrl) {
+    rawDatabaseUrl = "mysql://8Bkv5seDjTruoLg.root:0nJXVCwR9Fx56cG1@gateway01.us-east-1.prod.aws.tidbcloud.com:4000/refresqueriadbprod?sslaccept=strict&connection_limit=20&pool_timeout=30&connect_timeout=15";
+  }
+} else {
+  // En desarrollo debe apuntar obligatoriamente a refresqueriadbdev
+  if (rawDatabaseUrl.includes("/test")) {
+    rawDatabaseUrl = rawDatabaseUrl.replace(/\/test(\?|$)/, "/refresqueriadbdev$1");
+  } else if (!rawDatabaseUrl) {
+    rawDatabaseUrl = "mysql://3du39bDqZhT9MKT.root:op8bKg2GE2NBuM9z@gateway01.us-east-1.prod.aws.tidbcloud.com:4000/refresqueriadbdev?sslaccept=strict&connection_limit=20&pool_timeout=30&connect_timeout=15";
+  }
+}
+
+// Asegurar que process.env.DATABASE_URL esté sincronizado
+process.env.DATABASE_URL = rawDatabaseUrl;
+
 export const ENV = {
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 4000,
   NODE_ENV: process.env.NODE_ENV || "development",
-  DATABASE_URL: process.env.DATABASE_URL || "",
+  DATABASE_URL: rawDatabaseUrl,
   JWT_SECRET: process.env.JWT_SECRET || "fallback_super_secret_key_puntov_2026",
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "8h",
   GCP_PROJECT_ID: process.env.GCP_PROJECT_ID || "",
