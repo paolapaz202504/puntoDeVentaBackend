@@ -32,6 +32,9 @@ export class SaleService {
       product_type: {
         in: ["DIRECT_SALE", "MANUFACTURED", "ON_DEMAND"],
       },
+      category: {
+        show_in_pos: true,
+      },
     };
 
     if (categoryId) {

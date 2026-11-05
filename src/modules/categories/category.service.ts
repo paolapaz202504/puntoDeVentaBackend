@@ -5,19 +5,20 @@ export class CategoryService {
     page: number;
     limit: number;
     search: string;
+    show_in_pos?: boolean;
     sortBy: "name" | "created_at";
     order: "asc" | "desc";
   }) {
-    const { page, limit, search, sortBy, order } = params;
+    const { page, limit, search, show_in_pos, sortBy, order } = params;
     const skip = (page - 1) * limit;
 
-    const where = search
-      ? {
-          name: {
-            contains: search,
-          },
-        }
-      : {};
+    const where: any = {};
+    if (search) {
+      where.name = { contains: search };
+    }
+    if (show_in_pos !== undefined) {
+      where.show_in_pos = show_in_pos;
+    }
 
     const [total, items] = await Promise.all([
       prisma.category.count({ where }),
@@ -45,6 +46,7 @@ export class CategoryService {
         id: c.id,
         name: c.name,
         description: c.description,
+        show_in_pos: (c as any).show_in_pos ?? true,
         created_at: c.created_at,
         updated_at: c.updated_at,
         created_by: c.created_by,
@@ -78,7 +80,7 @@ export class CategoryService {
   }
 
   static async create(
-    data: { name: string; description?: string | null },
+    data: { name: string; description?: string | null; show_in_pos?: boolean },
     createdBy?: string
   ) {
     const existing = await prisma.category.findUnique({
@@ -95,6 +97,7 @@ export class CategoryService {
       data: {
         name: data.name,
         description: data.description || null,
+        show_in_pos: data.show_in_pos !== undefined ? data.show_in_pos : true,
         created_by: createdBy || null,
         updated_by: createdBy || null,
       },
@@ -103,7 +106,7 @@ export class CategoryService {
 
   static async update(
     id: string,
-    data: { name?: string; description?: string | null },
+    data: { name?: string; description?: string | null; show_in_pos?: boolean },
     updatedBy?: string
   ) {
     await this.getById(id);
@@ -128,6 +131,7 @@ export class CategoryService {
       data: {
         name: data.name,
         description: data.description !== undefined ? data.description : undefined,
+        show_in_pos: data.show_in_pos !== undefined ? data.show_in_pos : undefined,
         updated_by: updatedBy || null,
       },
     });
