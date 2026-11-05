@@ -270,7 +270,7 @@ export class ProductService {
           presentations: true,
         },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   static async update(id: string, data: any, updatedBy?: string) {
@@ -351,7 +351,7 @@ export class ProductService {
           presentations: true,
         },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   static async delete(id: string) {

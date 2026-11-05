@@ -219,7 +219,7 @@ export class UserService {
         is_active: newUser.is_active,
         roles: existingRoles.map((r) => ({ id: r.id, name: r.name })),
       };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   static async update(
@@ -330,7 +330,7 @@ export class UserService {
         is_active: freshUser!.is_active,
         roles: freshUser!.user_roles.map((ur) => ({ id: ur.role.id, name: ur.role.name })),
       };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   static async delete(id: string) {

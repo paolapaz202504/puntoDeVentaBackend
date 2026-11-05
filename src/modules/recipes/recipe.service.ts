@@ -188,7 +188,7 @@ export class RecipeService {
           },
         },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   static async update(id: string, data: any, updatedBy?: string) {
@@ -236,7 +236,7 @@ export class RecipeService {
           },
         },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   static async delete(id: string) {
@@ -264,6 +264,6 @@ export class RecipeService {
       return tx.recipe.delete({
         where: { id },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 }

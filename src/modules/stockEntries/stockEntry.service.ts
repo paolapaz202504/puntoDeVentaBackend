@@ -291,7 +291,7 @@ export class StockEntryService {
       }
 
       return entry;
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   /**
@@ -363,7 +363,7 @@ export class StockEntryService {
       });
 
       return { payment, entry: updatedEntry };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 
   /**

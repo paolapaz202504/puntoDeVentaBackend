@@ -105,7 +105,7 @@ export class PermissionService {
         where: { id: roleId },
         data: { updated_by: updatedBy || null },
       });
-    });
+    }, { maxWait: 10000, timeout: 30000 });
 
     return this.getRolePermissions(roleId);
   }

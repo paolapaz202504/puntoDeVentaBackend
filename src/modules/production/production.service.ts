@@ -201,6 +201,6 @@ export class ProductionService {
         unit_cost: producedQuantity > 0 ? totalBatchCost / producedQuantity : 0,
         consumed_ingredients_count: consumedItemsRecords.length,
       };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 }
