@@ -320,6 +320,9 @@ export class SaleService {
         },
         include: {
           items: true,
+          table: {
+            select: { id: true, name: true, area: { select: { id: true, name: true } } },
+          },
         },
       });
 
