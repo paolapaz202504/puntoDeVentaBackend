@@ -44,6 +44,29 @@ export class AuthController {
     }
   }
 
+  static async refresh(req: Request, res: Response, next: NextFunction) {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({
+          success: false,
+          message: "No se proporcionó un token de autenticación para renovar",
+        });
+      }
+
+      const token = authHeader.split(" ")[1];
+      const result = await AuthService.refreshToken(token);
+
+      return res.json({
+        success: true,
+        message: "Token renovado exitosamente",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async logout(req: Request, res: Response) {
     // Al ser JWT sin estado, el cliente elimina el token localmente
     return res.json({

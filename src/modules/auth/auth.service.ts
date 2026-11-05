@@ -201,4 +201,99 @@ export class AuthService {
       roles: updatedUser.user_roles.map((ur) => ({ id: ur.role.id, name: ur.role.name })),
     };
   }
+
+  static async refreshToken(oldToken: string) {
+    let decoded: any;
+    try {
+      // Validar firma del token permitiendo tokens recientemente expirados dentro del periodo de gracia
+      decoded = jwt.verify(oldToken, ENV.JWT_SECRET, { ignoreExpiration: true });
+    } catch (err) {
+      const error: any = new Error("Token inválido o firma no autorizada");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    if (!decoded || !decoded.id) {
+      const error: any = new Error("Token malformado o incompleto");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    // Ventana de gracia máxima para renovación: 7 días desde la expiración original
+    const GRACE_PERIOD_SECONDS = 7 * 24 * 60 * 60; // 7 días
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    if (decoded.exp && nowInSeconds - decoded.exp > GRACE_PERIOD_SECONDS) {
+      const error: any = new Error(
+        "La sesión ha expirado definitivamente por inactividad prolongada. Inicie sesión nuevamente."
+      );
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      include: {
+        user_roles: {
+          include: {
+            role: {
+              include: {
+                role_permissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!dbUser) {
+      const error: any = new Error("El usuario ya no existe en el sistema");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    if (!dbUser.is_active) {
+      const error: any = new Error("El usuario se encuentra inactivo. Contacte al administrador.");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    // Extraer lista consolidada de roles y permisos vigentes
+    const permissionSet = new Set<string>();
+    const roles = dbUser.user_roles.map((ur) => {
+      ur.role.role_permissions.forEach((rp) => {
+        permissionSet.add(rp.permission.slug);
+      });
+      return {
+        id: ur.role.id,
+        name: ur.role.name,
+      };
+    });
+
+    // Generar nuevo JWT con vigencia completa renovada
+    const newToken = jwt.sign(
+      {
+        id: dbUser.id,
+        user: dbUser.user,
+      },
+      ENV.JWT_SECRET,
+      { expiresIn: ENV.JWT_EXPIRES_IN as any }
+    );
+
+    return {
+      token: newToken,
+      user: {
+        id: dbUser.id,
+        name: dbUser.name,
+        user: dbUser.user,
+        email: dbUser.email,
+        pin_code: dbUser.pin_code,
+        roles,
+        permissions: Array.from(permissionSet),
+      },
+    };
+  }
 }
