@@ -46,7 +46,9 @@ export class FinanceController {
 
   static async getDashboardMetrics(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await FinanceService.getDashboardMetrics();
+      const startDate = req.query.startDate as string | undefined;
+      const endDate = req.query.endDate as string | undefined;
+      const result = await FinanceService.getDashboardMetrics(startDate, endDate);
       res.json(result);
     } catch (error) {
       next(error);

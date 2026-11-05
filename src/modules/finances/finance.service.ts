@@ -214,66 +214,101 @@ export class FinanceService {
     };
   }
 
-  static async getDashboardMetrics() {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  static async getDashboardMetrics(startDateStr?: string, endDateStr?: string) {
+    let start: Date;
+    let end: Date;
 
-    // 1. Métricas de hoy
-    const [todaySales, todayPurchasePayments, todayExpenses] = await Promise.all([
-      prisma.sale.findMany({
-        where: {
-          status: "COMPLETADA",
-          sale_date: { gte: startOfToday },
-        },
-      }),
-      prisma.purchasePayment.findMany({
-        where: {
-          payment_date: { gte: startOfToday },
-        },
-      }),
-      prisma.expense.findMany({
-        where: {
-          expense_date: { gte: startOfToday },
-        },
-      }),
-    ]);
+    if (startDateStr) {
+      if (startDateStr.includes("T")) {
+        start = new Date(startDateStr);
+      } else {
+        const [y, m, d] = startDateStr.split("-").map(Number);
+        start = new Date(y, m - 1, d, 0, 0, 0, 0);
+      }
+    } else {
+      const now = new Date();
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    }
 
-    const todaySalesTotal = todaySales.reduce((acc, s) => acc + Number(s.total), 0);
-    const todayOutflowsTotal =
-      todayPurchasePayments.reduce((acc, p) => acc + Number(p.amount), 0) +
-      todayExpenses.reduce((acc, e) => acc + Number(e.amount), 0);
+    if (endDateStr) {
+      if (endDateStr.includes("T")) {
+        end = new Date(endDateStr);
+      } else {
+        const [y, m, d] = endDateStr.split("-").map(Number);
+        end = new Date(y, m - 1, d, 23, 59, 59, 999);
+      }
+    } else {
+      const now = new Date();
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    }
 
-    // 2. Métricas del mes actual
-    const [monthSales, monthPurchasePayments, monthExpenses] = await Promise.all([
-      prisma.sale.findMany({
-        where: {
-          status: "COMPLETADA",
-          sale_date: { gte: startOfMonth },
+    // 1. Consultar Ventas en el período
+    const sales = await prisma.sale.findMany({
+      where: {
+        status: "COMPLETADA",
+        sale_date: { gte: start, lte: end },
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                category_id: true,
+                category: { select: { id: true, name: true } },
+              },
+            },
+          },
         },
-      }),
-      prisma.purchasePayment.findMany({
-        where: {
-          payment_date: { gte: startOfMonth },
-        },
-      }),
-      prisma.expense.findMany({
-        where: {
-          expense_date: { gte: startOfMonth },
-        },
-      }),
-    ]);
+      },
+      orderBy: { sale_date: "asc" },
+    });
 
-    const monthSalesTotal = monthSales.reduce((acc, s) => acc + Number(s.total), 0);
-    const monthPurchasesTotal = monthPurchasePayments.reduce((acc, p) => acc + Number(p.amount), 0);
-    const monthExpensesTotal = monthExpenses.reduce((acc, e) => acc + Number(e.amount), 0);
-    const monthOutflowsTotal = monthPurchasesTotal + monthExpensesTotal;
-    const monthNetProfit = monthSalesTotal - monthOutflowsTotal;
+    // 2. Consultar Compras (Stock Entries) en el período
+    const stockEntries = await prisma.stockEntry.findMany({
+      where: {
+        entry_date: { gte: start, lte: end },
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                category_id: true,
+                category: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { entry_date: "asc" },
+    });
 
-    // 3. Inventario Crítico
+    // 3. Consultar Gastos Operativos en el período
+    const expenses = await prisma.expense.findMany({
+      where: {
+        expense_date: { gte: start, lte: end },
+      },
+      orderBy: { expense_date: "asc" },
+    });
+
+    // 4. Categorías de productos
+    const categories = await prisma.category.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+
+    // 5. Inventario Crítico
     const allProducts = await prisma.product.findMany({
       where: { is_active: true },
-      include: { base_unit: { select: { symbol: true } } },
+      include: {
+        base_unit: { select: { symbol: true } },
+        category: { select: { id: true, name: true } },
+      },
+      orderBy: { current_stock: "asc" },
     });
 
     const criticalProducts = allProducts
@@ -282,108 +317,134 @@ export class FinanceService {
         id: p.id,
         code: p.code,
         name: p.name,
+        category_id: p.category_id,
+        category_name: p.category?.name || "Sin Categoría",
         current_stock: Number(p.current_stock),
         min_stock_alert: Number(p.min_stock_alert),
         unit_symbol: p.base_unit.symbol,
       }));
 
-    // 4. Últimos 7 días para gráfico de barras
-    const chartDays: Array<{ date: string; sales: number; outflows: number }> = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+    // Cálculos de Resumen
+    const salesTotal = sales.reduce((acc, s) => acc + Number(s.total), 0);
+    const purchasesTotal = stockEntries.reduce((acc, e) => acc + Number(e.total_cost), 0);
+    const expensesTotal = expenses.reduce((acc, ex) => acc + Number(ex.amount), 0);
+    const netProfit = salesTotal - purchasesTotal - expensesTotal;
 
-      const daySales = monthSales.filter(
-        (s) => new Date(s.sale_date) >= dayStart && new Date(s.sale_date) <= dayEnd
-      );
-      const dayPurchases = monthPurchasePayments.filter(
-        (p) => new Date(p.payment_date) >= dayStart && new Date(p.payment_date) <= dayEnd
-      );
-      const dayExpensesList = monthExpenses.filter(
-        (e) => new Date(e.expense_date) >= dayStart && new Date(e.expense_date) <= dayEnd
-      );
+    // 6. Tendencia diaria para el gráfico de líneas (cada día dentro del rango)
+    const dailyMap: Record<string, { sales: number; purchases: number; expenses: number }> = {};
+    const curr = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
 
-      const salesSum = daySales.reduce((acc, s) => acc + Number(s.total), 0);
-      const outSum =
-        dayPurchases.reduce((acc, p) => acc + Number(p.amount), 0) +
-        dayExpensesList.reduce((acc, e) => acc + Number(e.amount), 0);
-
-      const dayLabel = `${d.getDate()}/${d.getMonth() + 1}`;
-      chartDays.push({
-        date: dayLabel,
-        sales: salesSum,
-        outflows: outSum,
-      });
+    while (curr <= lastDay) {
+      const key = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, "0")}-${String(
+        curr.getDate()
+      ).padStart(2, "0")}`;
+      dailyMap[key] = { sales: 0, purchases: 0, expenses: 0 };
+      curr.setDate(curr.getDate() + 1);
     }
 
-    // 5. Top 5 productos más vendidos del mes
-    const saleItems = await prisma.saleItem.findMany({
-      where: {
-        sale: {
-          status: "COMPLETADA",
-          sale_date: { gte: startOfMonth },
-        },
-      },
-    });
-
-    const productSalesMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
-    for (const item of saleItems) {
-      if (!productSalesMap[item.product_id]) {
-        productSalesMap[item.product_id] = {
-          name: item.product_name,
-          quantity: 0,
-          revenue: 0,
-        };
+    for (const s of sales) {
+      const d = new Date(s.sale_date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate()
+      ).padStart(2, "0")}`;
+      if (dailyMap[key]) {
+        dailyMap[key].sales += Number(s.total);
       }
-      productSalesMap[item.product_id].quantity += Number(item.quantity);
-      productSalesMap[item.product_id].revenue += Number(item.subtotal);
     }
 
-    const topProducts = Object.values(productSalesMap)
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
+    for (const p of stockEntries) {
+      const d = new Date(p.entry_date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate()
+      ).padStart(2, "0")}`;
+      if (dailyMap[key]) {
+        dailyMap[key].purchases += Number(p.total_cost);
+      }
+    }
 
-    // 6. Actividad reciente
-    const recentSales = await prisma.sale.findMany({
-      take: 5,
-      orderBy: { sale_date: "desc" },
-      select: {
-        id: true,
-        sale_number: true,
-        customer_name: true,
-        sale_date: true,
-        total: true,
-        payment_method: true,
-        status: true,
-      },
+    for (const ex of expenses) {
+      const d = new Date(ex.expense_date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate()
+      ).padStart(2, "0")}`;
+      if (dailyMap[key]) {
+        dailyMap[key].expenses += Number(ex.amount);
+      }
+    }
+
+    const dailyTrend = Object.entries(dailyMap).map(([dateKey, values]) => {
+      const [y, m, d] = dateKey.split("-");
+      const profit = values.sales - values.purchases - values.expenses;
+      return {
+        date: dateKey,
+        label: `${d}/${m}`,
+        sales: values.sales,
+        purchases: values.purchases,
+        expenses: values.expenses,
+        profit,
+      };
     });
+
+    // 7. Listas formateadas para agrupaciones temporales flexibles en el cliente
+    const formattedSales = sales.map((s) => ({
+      id: s.id,
+      sale_date: s.sale_date,
+      total: Number(s.total),
+      items: s.items.map((i) => ({
+        product_id: i.product_id,
+        product_name: i.product_name,
+        category_id: i.product?.category_id || "",
+        category_name: i.product?.category?.name || "Sin Categoría",
+        quantity: Number(i.quantity),
+        unit_price: Number(i.unit_price),
+        subtotal: Number(i.subtotal),
+      })),
+    }));
+
+    const formattedPurchases = stockEntries.map((e) => ({
+      id: e.id,
+      entry_date: e.entry_date,
+      total_cost: Number(e.total_cost),
+      items: e.items.map((i) => ({
+        product_id: i.product_id,
+        product_name: i.product?.name || "Producto",
+        category_id: i.product?.category_id || "",
+        category_name: i.product?.category?.name || "Sin Categoría",
+        quantity: Number(i.quantity),
+        unit_cost: Number(i.unit_cost),
+        total_cost: Number(i.total_cost),
+      })),
+    }));
+
+    const formattedExpenses = expenses.map((ex) => ({
+      id: ex.id,
+      expense_date: ex.expense_date,
+      category: ex.category,
+      description: ex.description,
+      amount: Number(ex.amount),
+    }));
 
     return {
-      today: {
-        salesTotal: todaySalesTotal,
-        salesCount: todaySales.length,
-        outflowsTotal: todayOutflowsTotal,
-        netBalance: todaySalesTotal - todayOutflowsTotal,
+      period: {
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
       },
-      month: {
-        salesTotal: monthSalesTotal,
-        purchasesTotal: monthPurchasesTotal,
-        expensesTotal: monthExpensesTotal,
-        outflowsTotal: monthOutflowsTotal,
-        netProfit: monthNetProfit,
+      summary: {
+        salesTotal,
+        purchasesTotal,
+        expensesTotal,
+        netProfit,
       },
+      dailyTrend,
+      categories,
+      sales: formattedSales,
+      purchases: formattedPurchases,
+      expenses: formattedExpenses,
       criticalInventory: {
         totalCritical: criticalProducts.length,
-        products: criticalProducts.slice(0, 8),
+        products: criticalProducts,
       },
-      chartData: chartDays,
-      topProducts,
-      recentSales: recentSales.map((s) => ({
-        ...s,
-        total: Number(s.total),
-      })),
     };
   }
 }
