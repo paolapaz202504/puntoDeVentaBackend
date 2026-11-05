@@ -14,7 +14,7 @@ export const updateCategorySchema = createCategorySchema.partial();
 
 export const queryCategorySchema = z.object({
   page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(10),
+  limit: z.coerce.number().min(1).max(500).default(10),
   search: z.string().optional().default(""),
   show_in_pos: z.preprocess((val) => {
     if (val === "true" || val === true) return true;
