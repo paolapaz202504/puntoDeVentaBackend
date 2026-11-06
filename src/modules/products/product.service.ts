@@ -1,4 +1,5 @@
 import { prisma } from "../../config/db.js";
+import { cache } from "../../services/cache.service.js";
 
 export class ProductService {
   static async list(params: {
@@ -223,7 +224,7 @@ export class ProductService {
     }
 
     // 3. Crear producto y presentaciones en transacción ACID
-    return prisma.$transaction(async (tx) => {
+    const newProduct = await prisma.$transaction(async (tx) => {
       const product = await tx.product.create({
         data: {
           code: data.code.toUpperCase(),
@@ -271,6 +272,12 @@ export class ProductService {
         },
       });
     }, { maxWait: 10000, timeout: 30000 });
+
+    // Invalidar reactivamente la caché de productos POS y reportes
+    await cache.invalidatePosProducts();
+    await cache.invalidateDashboard();
+
+    return newProduct;
   }
 
   static async update(id: string, data: any, updatedBy?: string) {
@@ -300,7 +307,7 @@ export class ProductService {
       }
     }
 
-    return prisma.$transaction(async (tx) => {
+    const updatedProduct = await prisma.$transaction(async (tx) => {
       await tx.product.update({
         where: { id },
         data: {
@@ -352,14 +359,26 @@ export class ProductService {
         },
       });
     }, { maxWait: 10000, timeout: 30000 });
+
+    // Invalidar reactivamente la caché de productos POS y reportes
+    await cache.invalidatePosProducts();
+    await cache.invalidateDashboard();
+
+    return updatedProduct;
   }
 
   static async delete(id: string) {
     await this.getById(id);
 
-    return prisma.product.delete({
+    const deleted = await prisma.product.delete({
       where: { id },
     });
+
+    // Invalidar reactivamente la caché de productos POS y reportes
+    await cache.invalidatePosProducts();
+    await cache.invalidateDashboard();
+
+    return deleted;
   }
 
   static async getDistinctPresentations() {

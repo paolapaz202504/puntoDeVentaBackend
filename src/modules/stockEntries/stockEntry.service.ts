@@ -1,6 +1,7 @@
 import { prisma } from "../../config/db.js";
 import { CreateStockEntryInput, AddPaymentInput, QueryStockEntryInput } from "./stockEntry.schemas.js";
 import { Prisma } from "@prisma/client";
+import { cache } from "../../services/cache.service.js";
 
 export class StockEntryService {
   /**
@@ -159,7 +160,7 @@ export class StockEntryService {
    * Crear nueva entrada de inventario / compra con transacción ACID
    */
   static async create(input: CreateStockEntryInput, userId?: string) {
-    return await prisma.$transaction(async (tx) => {
+    const createdEntry = await prisma.$transaction(async (tx) => {
       const entryNumber = await this.getNextEntryNumber(input.entry_type);
 
       // 1. Validar productos y calcular totales
@@ -292,6 +293,12 @@ export class StockEntryService {
 
       return entry;
     }, { maxWait: 10000, timeout: 30000 });
+
+    // Invalidar reactivamente la caché de productos POS y reportes
+    await cache.invalidatePosProducts();
+    await cache.invalidateDashboard();
+
+    return createdEntry;
   }
 
   /**
