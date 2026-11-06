@@ -1,4 +1,5 @@
 import { prisma } from "../../config/db.js";
+import { cache } from "../../services/cache.service.js";
 
 export class FinanceService {
   static async getOutflows(params: {
@@ -242,74 +243,71 @@ export class FinanceService {
       end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     }
 
-    // 1. Consultar Ventas en el período
-    const sales = await prisma.sale.findMany({
-      where: {
-        status: "COMPLETADA",
-        sale_date: { gte: start, lte: end },
-      },
-      include: {
-        items: {
+    const cacheKey = `dashboard_metrics_${start.toISOString()}_${end.toISOString()}`;
+
+    return cache.getOrSet(cacheKey, async () => {
+      // 1. Consultar en paralelo para reducir drásticamente la latencia de red (qaAgent / cacheBdAgent)
+      const [sales, stockEntries, expenses, categories, allProducts] = await Promise.all([
+        prisma.sale.findMany({
+          where: {
+            status: "COMPLETADA",
+            sale_date: { gte: start, lte: end },
+          },
           include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                category_id: true,
-                category: { select: { id: true, name: true } },
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category_id: true,
+                    category: { select: { id: true, name: true } },
+                  },
+                },
               },
             },
           },
-        },
-      },
-      orderBy: { sale_date: "asc" },
-    });
-
-    // 2. Consultar Compras (Stock Entries) en el período
-    const stockEntries = await prisma.stockEntry.findMany({
-      where: {
-        entry_date: { gte: start, lte: end },
-      },
-      include: {
-        items: {
+          orderBy: { sale_date: "asc" },
+        }),
+        prisma.stockEntry.findMany({
+          where: {
+            entry_date: { gte: start, lte: end },
+          },
           include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                category_id: true,
-                category: { select: { id: true, name: true } },
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category_id: true,
+                    category: { select: { id: true, name: true } },
+                  },
+                },
               },
             },
           },
-        },
-      },
-      orderBy: { entry_date: "asc" },
-    });
-
-    // 3. Consultar Gastos Operativos en el período
-    const expenses = await prisma.expense.findMany({
-      where: {
-        expense_date: { gte: start, lte: end },
-      },
-      orderBy: { expense_date: "asc" },
-    });
-
-    // 4. Categorías de productos
-    const categories = await prisma.category.findMany({
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    });
-
-    // 5. Inventario Crítico
-    const allProducts = await prisma.product.findMany({
-      where: { is_active: true },
-      include: {
-        base_unit: { select: { symbol: true } },
-        category: { select: { id: true, name: true } },
-      },
-      orderBy: { current_stock: "asc" },
-    });
+          orderBy: { entry_date: "asc" },
+        }),
+        prisma.expense.findMany({
+          where: {
+            expense_date: { gte: start, lte: end },
+          },
+          orderBy: { expense_date: "asc" },
+        }),
+        prisma.category.findMany({
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        }),
+        prisma.product.findMany({
+          where: { is_active: true },
+          include: {
+            base_unit: { select: { symbol: true } },
+            category: { select: { id: true, name: true } },
+          },
+          orderBy: { current_stock: "asc" },
+        }),
+      ]);
 
     const criticalProducts = allProducts
       .filter((p) => Number(p.current_stock) <= Number(p.min_stock_alert))
@@ -446,5 +444,6 @@ export class FinanceService {
         products: criticalProducts,
       },
     };
+    }, 60);
   }
 }

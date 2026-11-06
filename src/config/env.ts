@@ -50,6 +50,16 @@ if (nodeEnv === "production") {
   }
 }
 
+// Garantizar timeout de conexión robusto (60s) para clústeres serverless de TiDB Cloud
+if (rawDatabaseUrl.includes("connect_timeout=")) {
+  rawDatabaseUrl = rawDatabaseUrl.replace(/connect_timeout=\d+/, "connect_timeout=60");
+} else if (rawDatabaseUrl) {
+  rawDatabaseUrl += (rawDatabaseUrl.includes("?") ? "&" : "?") + "connect_timeout=60";
+}
+if (rawDatabaseUrl.includes("pool_timeout=")) {
+  rawDatabaseUrl = rawDatabaseUrl.replace(/pool_timeout=\d+/, "pool_timeout=60");
+}
+
 // Asegurar que process.env.DATABASE_URL esté sincronizado
 process.env.DATABASE_URL = rawDatabaseUrl;
 

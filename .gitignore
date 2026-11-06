@@ -45,6 +45,8 @@ backups/*.sql
 # Archivos multimedia subidos en ejecución (preservando estructura)
 files/config/*
 !files/config/.gitkeep
+files/cache/*
+!files/cache/.gitkeep
 
 # Archivos de cobertura de pruebas
 coverage/

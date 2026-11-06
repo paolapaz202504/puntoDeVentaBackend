@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/db.js";
+import { cache } from "../../services/cache.service.js";
 
 export class SaleService {
   private static async generateSaleNumber(tx?: Prisma.TransactionClient): Promise<string> {
@@ -28,50 +29,61 @@ export class SaleService {
   }
 
   static async getPosProducts(search?: string, categoryId?: string) {
-    const where: Prisma.ProductWhereInput = {
-      is_active: true,
-      product_type: {
-        in: ["DIRECT_SALE", "MANUFACTURED", "ON_DEMAND"],
-      },
-      category: {
-        show_in_pos: true,
-      },
+    const fetchFromDb = async () => {
+      const where: Prisma.ProductWhereInput = {
+        is_active: true,
+        product_type: {
+          in: ["DIRECT_SALE", "MANUFACTURED", "ON_DEMAND"],
+        },
+        category: {
+          show_in_pos: true,
+        },
+      };
+
+      if (categoryId) {
+        where.category_id = categoryId;
+      }
+
+      if (search) {
+        where.OR = [
+          { name: { contains: search } },
+          { code: { contains: search } },
+        ];
+      }
+
+      const products = await prisma.product.findMany({
+        where,
+        orderBy: { name: "asc" },
+        include: {
+          category: {
+            select: { id: true, name: true },
+          },
+          brand: {
+            select: { id: true, name: true },
+          },
+          base_unit: {
+            select: { id: true, name: true, symbol: true },
+          },
+        },
+      });
+
+      return products.map((p) => ({
+        ...p,
+        sale_price: Number(p.sale_price),
+        current_cost: Number(p.current_cost),
+        current_stock: Number(p.current_stock),
+        min_stock_alert: Number(p.min_stock_alert),
+      }));
     };
 
-    if (categoryId) {
-      where.category_id = categoryId;
+    // Si hay búsqueda dinámica puntual por texto, ejecutar directamente
+    if (search && search.trim() !== "") {
+      return fetchFromDb();
     }
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search } },
-        { code: { contains: search } },
-      ];
-    }
-
-    const products = await prisma.product.findMany({
-      where,
-      orderBy: { name: "asc" },
-      include: {
-        category: {
-          select: { id: true, name: true },
-        },
-        brand: {
-          select: { id: true, name: true },
-        },
-        base_unit: {
-          select: { id: true, name: true, symbol: true },
-        },
-      },
-    });
-
-    return products.map((p) => ({
-      ...p,
-      sale_price: Number(p.sale_price),
-      current_cost: Number(p.current_cost),
-      current_stock: Number(p.current_stock),
-      min_stock_alert: Number(p.min_stock_alert),
-    }));
+    // Estrategia JSON-First y memoria (cacheBdAgent)
+    const cacheKey = `pos_products_${categoryId || "all"}`;
+    return cache.getOrSet(cacheKey, fetchFromDb, 600);
   }
 
   static async list(params: {
@@ -296,7 +308,7 @@ export class SaleService {
     }
 
     // 2. Transacción ACID ultrarrápida: solo escrituras
-    return prisma.$transaction(
+    const createdSaleResult = await prisma.$transaction(
       async (tx) => {
         // Descontar inventario secuencialmente dentro de la transacción
         for (const [productId, qtyToDeduct] of stockDeltas.entries()) {
@@ -362,6 +374,12 @@ export class SaleService {
         timeout: 30000,
       }
     );
+
+    // Ganchos de invalidación reactiva (cacheBdAgent)
+    cache.invalidatePosProducts().catch(() => {});
+    cache.invalidateDashboard().catch(() => {});
+
+    return createdSaleResult;
   }
 
   static async cancel(id: string, userId?: string) {
@@ -388,7 +406,7 @@ export class SaleService {
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    return prisma.$transaction(
+    const canceledSaleResult = await prisma.$transaction(
       async (tx) => {
         // Devolver stock secuencialmente en tx
         for (const item of sale.items) {
@@ -421,5 +439,11 @@ export class SaleService {
         timeout: 30000,
       }
     );
+
+    // Invalidador reactivo
+    cache.invalidatePosProducts().catch(() => {});
+    cache.invalidateDashboard().catch(() => {});
+
+    return canceledSaleResult;
   }
 }

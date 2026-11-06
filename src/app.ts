@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
+import compression from "compression";
 import authRoutes from "./modules/auth/auth.routes.js";
 import roleRoutes from "./modules/roles/role.routes.js";
 import userRoutes from "./modules/users/user.routes.js";
@@ -25,6 +26,8 @@ import { errorHandler } from "./middlewares/errorHandler.js";
 export const app = express();
 
 // Middlewares globales
+app.use(compression());
+
 app.use(
   cors({
     origin: "*",
@@ -35,8 +38,15 @@ app.use(
 
 app.use(express.json());
 
-// Servir archivos estáticos (logotipos en files/config, etc.)
-app.use("/files", express.static(path.resolve(process.cwd(), "files")));
+// Servir archivos estáticos con cabeceras de caché HTTP (cacheAgent)
+app.use(
+  "/files",
+  express.static(path.resolve(process.cwd(), "files"), {
+    maxAge: "365d",
+    immutable: true,
+    etag: true,
+  })
+);
 
 // Endpoint de diagnóstico
 app.get("/api/health", (req, res) => {
