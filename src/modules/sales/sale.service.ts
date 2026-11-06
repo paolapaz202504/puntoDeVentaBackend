@@ -244,9 +244,7 @@ export class SaleService {
     },
     userId?: string
   ) {
-    // 1. Generar número de venta y validar productos antes de la transacción
-    const saleNumber = await this.generateSaleNumber();
-
+    // 1. Cargar y validar productos antes de la transacción
     const productIds = Array.from(new Set(data.items.map((i) => i.product_id)));
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
@@ -321,79 +319,135 @@ export class SaleService {
       changeReturned = Math.max(0, data.cash_received - total);
     }
 
-    // 2. Transacción ACID ultrarrápida: solo escrituras
-    const createdSaleResult = await prisma.$transaction(
-      async (tx) => {
-        // Descontar inventario secuencialmente dentro de la transacción
-        for (const [productId, qtyToDeduct] of stockDeltas.entries()) {
-          const prod = productMap.get(productId)!;
-          const currentStock = Number(prod.current_stock || 0);
-          const newStock = Math.max(0, currentStock - qtyToDeduct);
-          await tx.product.update({
-            where: { id: productId },
-            data: {
-              current_stock: new Prisma.Decimal(newStock),
-              updated_by: userId,
-            },
-          });
+    // 2. Transacción ACID con resolución automática de concurrencia y reintentos (retry loop con jitter)
+    const MAX_CONCURRENCY_RETRIES = 5;
+
+    for (let attempt = 1; attempt <= MAX_CONCURRENCY_RETRIES; attempt++) {
+      try {
+        const saleNumber = await this.generateSaleNumber();
+
+        const createdSaleResult = await prisma.$transaction(
+          async (tx) => {
+            // Verificar si otro cajero acaba de registrar este correlativo en el mismo milisegundo
+            const existingSale = await tx.sale.findUnique({
+              where: { sale_number: saleNumber },
+              select: { id: true },
+            });
+
+            if (existingSale) {
+              const err: any = new Error(`Colisión de correlativo concurrente: ${saleNumber}`);
+              err.isConcurrencyCollision = true;
+              throw err;
+            }
+
+            // Descontar inventario validando stock fresco en tiempo real dentro de la transacción
+            for (const [productId, qtyToDeduct] of stockDeltas.entries()) {
+              const freshProd = await tx.product.findUnique({
+                where: { id: productId },
+                select: { id: true, name: true, current_stock: true, is_active: true },
+              });
+
+              if (!freshProd) {
+                const err: any = new Error(`Producto con ID ${productId} no existe`);
+                err.statusCode = 400;
+                throw err;
+              }
+
+              const currentStock = Number(freshProd.current_stock || 0);
+              if (currentStock < qtyToDeduct) {
+                const err: any = new Error(
+                  `Stock insuficiente para "${freshProd.name}". Existencias actuales: ${currentStock}, cantidad solicitada: ${qtyToDeduct}.`
+                );
+                err.statusCode = 400;
+                throw err;
+              }
+
+              const newStock = Math.max(0, currentStock - qtyToDeduct);
+              await tx.product.update({
+                where: { id: productId },
+                data: {
+                  current_stock: new Prisma.Decimal(newStock),
+                  updated_by: userId,
+                },
+              });
+            }
+
+            const sale = await tx.sale.create({
+              data: {
+                sale_number: saleNumber,
+                sale_date: new Date(),
+                customer_name: data.customer_name || "Consumidor Final",
+                sale_type: data.sale_type || "DIRECTA",
+                table_id: data.table_id || null,
+                payment_method: data.payment_method || "EFECTIVO",
+                bank_name: data.bank_name || null,
+                document_number: data.document_number || null,
+                subtotal: new Prisma.Decimal(calculatedSubtotal),
+                total: new Prisma.Decimal(total),
+                cash_received: data.cash_received != null ? new Prisma.Decimal(data.cash_received) : null,
+                change_returned: changeReturned != null ? new Prisma.Decimal(changeReturned) : null,
+                status: "COMPLETADA",
+                notes: data.notes || null,
+                created_by: userId || null,
+                updated_by: userId || null,
+                items: {
+                  create: itemsToCreate,
+                },
+              },
+              include: {
+                items: true,
+                table: {
+                  select: { id: true, name: true, area: { select: { id: true, name: true } } },
+                },
+              },
+            });
+
+            return {
+              ...sale,
+              subtotal: Number(sale.subtotal),
+              total: Number(sale.total),
+              cash_received: sale.cash_received ? Number(sale.cash_received) : null,
+              change_returned: sale.change_returned ? Number(sale.change_returned) : null,
+              items: sale.items.map((i) => ({
+                ...i,
+                quantity: Number(i.quantity),
+                unit_price: Number(i.unit_price),
+                subtotal: Number(i.subtotal),
+                unit_cost: Number(i.unit_cost),
+              })),
+            };
+          },
+          {
+            maxWait: 15000,
+            timeout: 30000,
+          }
+        );
+
+        // Ganchos de invalidación reactiva (cacheBdAgent)
+        cache.invalidatePosProducts().catch(() => {});
+        cache.invalidateDashboard().catch(() => {});
+
+        return createdSaleResult;
+      } catch (err: any) {
+        const isCollision =
+          err.code === "P2002" ||
+          err.isConcurrencyCollision ||
+          (err.message &&
+            (err.message.includes("sale_number") ||
+              err.message.includes("Unique constraint") ||
+              err.message.includes("Duplicate entry") ||
+              err.message.includes("Colisión")));
+
+        if (isCollision && attempt < MAX_CONCURRENCY_RETRIES) {
+          // Jitter aleatorio entre 60ms y 180ms para desfasar la concurrencia entre cajeros simultáneos
+          const delay = Math.floor(Math.random() * 120) + 60;
+          await new Promise((res) => setTimeout(res, delay));
+          continue;
         }
 
-        const sale = await tx.sale.create({
-          data: {
-            sale_number: saleNumber,
-            sale_date: new Date(),
-            customer_name: data.customer_name || "Consumidor Final",
-            sale_type: data.sale_type || "DIRECTA",
-            table_id: data.table_id || null,
-            payment_method: data.payment_method || "EFECTIVO",
-            bank_name: data.bank_name || null,
-            document_number: data.document_number || null,
-            subtotal: new Prisma.Decimal(calculatedSubtotal),
-            total: new Prisma.Decimal(total),
-            cash_received: data.cash_received != null ? new Prisma.Decimal(data.cash_received) : null,
-            change_returned: changeReturned != null ? new Prisma.Decimal(changeReturned) : null,
-            status: "COMPLETADA",
-            notes: data.notes || null,
-            created_by: userId || null,
-            updated_by: userId || null,
-            items: {
-              create: itemsToCreate,
-            },
-          },
-          include: {
-            items: true,
-            table: {
-              select: { id: true, name: true, area: { select: { id: true, name: true } } },
-            },
-          },
-        });
-
-        return {
-          ...sale,
-          subtotal: Number(sale.subtotal),
-          total: Number(sale.total),
-          cash_received: sale.cash_received ? Number(sale.cash_received) : null,
-          change_returned: sale.change_returned ? Number(sale.change_returned) : null,
-          items: sale.items.map((i) => ({
-            ...i,
-            quantity: Number(i.quantity),
-            unit_price: Number(i.unit_price),
-            subtotal: Number(i.subtotal),
-            unit_cost: Number(i.unit_cost),
-          })),
-        };
-      },
-      {
-        maxWait: 15000,
-        timeout: 30000,
+        throw err;
       }
-    );
-
-    // Ganchos de invalidación reactiva (cacheBdAgent)
-    cache.invalidatePosProducts().catch(() => {});
-    cache.invalidateDashboard().catch(() => {});
-
-    return createdSaleResult;
+    }
   }
 
   static async cancel(id: string, userId?: string) {
