@@ -33,6 +33,17 @@ export class CacheService {
   }
 
   /**
+   * Sanitiza la clave para generar nombres de archivo válidos en cualquier SO (Windows/Linux/Docker)
+   */
+  private sanitizeKey(key: string): string {
+    return key.replace(/[/\\?%*:|"<>]/g, "_");
+  }
+
+  private getFilePath(key: string): string {
+    return path.join(this.cacheDir, `${this.sanitizeKey(key)}.json`);
+  }
+
+  /**
    * Obtiene datos desde la memoria o desde archivo JSON estático persistido
    */
   public async get<T>(key: string): Promise<T | null> {
@@ -49,7 +60,7 @@ export class CacheService {
     }
 
     // 2. Verificar archivo JSON estático (Estrategia JSON-First)
-    const filePath = path.join(this.cacheDir, `${key}.json`);
+    const filePath = this.getFilePath(key);
     if (fs.existsSync(filePath)) {
       try {
         const fileContent = await fs.promises.readFile(filePath, "utf-8");
@@ -86,8 +97,9 @@ export class CacheService {
     this.memoryCache.set(key, entry);
 
     // 2. Guardar atómicamente en disco (archivo temporal + rename)
-    const tempPath = path.join(this.cacheDir, `${key}.${Date.now()}.tmp`);
-    const finalPath = path.join(this.cacheDir, `${key}.json`);
+    const safeKey = this.sanitizeKey(key);
+    const tempPath = path.join(this.cacheDir, `${safeKey}.${Date.now()}.tmp`);
+    const finalPath = this.getFilePath(key);
 
     try {
       await fs.promises.writeFile(tempPath, JSON.stringify(entry), "utf-8");
@@ -119,7 +131,7 @@ export class CacheService {
    */
   public async invalidate(key: string): Promise<void> {
     this.memoryCache.delete(key);
-    const filePath = path.join(this.cacheDir, `${key}.json`);
+    const filePath = this.getFilePath(key);
     if (fs.existsSync(filePath)) {
       await fs.promises.unlink(filePath).catch(() => {});
     }
@@ -137,11 +149,12 @@ export class CacheService {
     }
 
     // Archivos
+    const safePrefix = this.sanitizeKey(prefix);
     if (fs.existsSync(this.cacheDir)) {
       try {
         const files = await fs.promises.readdir(this.cacheDir);
         for (const f of files) {
-          if (f.startsWith(prefix) && f.endsWith(".json")) {
+          if (f.startsWith(safePrefix) && f.endsWith(".json")) {
             await fs.promises.unlink(path.join(this.cacheDir, f)).catch(() => {});
           }
         }
