@@ -301,6 +301,20 @@ export class SaleService {
       stockDeltas.set(product.id, currentDelta + item.quantity);
     }
 
+    // Validación estricta de existencias: No permitir venta sin stock para NINGÚN producto
+    for (const [productId, qtyNeeded] of stockDeltas.entries()) {
+      const prod = productMap.get(productId)!;
+      const availableStock = Number(prod.current_stock || 0);
+
+      if (availableStock < qtyNeeded) {
+        const error: any = new Error(
+          `Stock insuficiente para "${prod.name}". Existencias actuales: ${availableStock}, cantidad solicitada: ${qtyNeeded}. Debe ingresar compras o registrar producción antes de vender.`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
     const total = calculatedSubtotal;
     let changeReturned: number | null = null;
     if (data.payment_method === "EFECTIVO" && data.cash_received != null) {

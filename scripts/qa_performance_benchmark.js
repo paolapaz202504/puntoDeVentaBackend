@@ -143,9 +143,13 @@ async function runBenchmark() {
 
   // 7. PRUEBA INTEGRAL DE MUTACIÓN E INVALIDACIÓN (VENTA Y ANULACIÓN)
   console.log('\n🛒 7. PRUEBA DE CICLO COMPLETO DE VENTA, MUTACIÓN E INVALIDACIÓN REACTIVA');
+  const productsWithStock = data1.filter(p => Number(p.current_stock || 0) > 0);
+  if (productsWithStock.length < 2) {
+    throw new Error('No hay suficientes productos con stock disponible para la prueba de venta.');
+  }
   const testItems = [
-    { product_id: data1[0].id, quantity: 1, unit_price: Number(data1[0].sale_price) },
-    { product_id: data1[1].id, quantity: 1, unit_price: Number(data1[1].sale_price) }
+    { product_id: productsWithStock[0].id, quantity: 1, unit_price: Number(productsWithStock[0].sale_price) },
+    { product_id: productsWithStock[1].id, quantity: 1, unit_price: Number(productsWithStock[1].sale_price) }
   ];
   const saleSubtotal = testItems.reduce((acc, i) => acc + i.quantity * i.unit_price, 0);
 
